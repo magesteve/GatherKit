@@ -69,10 +69,27 @@ Clone the repository:
 
 ```bash
 git clone https://github.com/magesteve/GatherKit.git
+cd GatherKit
+chmod +x CodeGather
 ```
 
-Additional installation instructions will be added as GatherKit evolves.
+You can run it directly:
 
+```bash
+/path/to/GatherKit/CodeGather
+```
+
+To make it available as a normal terminal command:
+
+```bash
+sudo cp CodeGather /usr/local/bin/CodeGather
+```
+
+Then, from the root of a Swift project:
+
+```bash
+CodeGather
+```
 ---
 
 ## Contributing
