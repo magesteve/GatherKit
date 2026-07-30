@@ -1,4 +1,8 @@
 .DS_Store
-CodeGather-*.txt
-ProjectGather-*.txt
-ChangeGather-*.txt
+
+*-CodeGather-*.txt
+*-ProjectGather-*.txt
+*-ChangeGather-*.txt
+*-DocGather-*.txt
+*-ReviewGather-*.txt
+*-SymbolGather-*.txt
