@@ -1,0 +1,51 @@
+#!/bin/zsh
+#
+# CodeGather
+#
+# Gather Swift source files into a single timestamped document suitable
+# for sharing with AI assistants.
+#
+# Part of GatherKit
+# https://github.com/magesteve/GatherKit
+#
+
+set -e
+
+timestamp=$(date +"%Y%m%d-%H%M%S")
+project=$(basename "$PWD")
+output="${project}-CodeGather-${timestamp}.txt"
+
+echo "Creating ${output}..."
+
+{
+    echo "======================================================================"
+    echo "Project   : ${project}"
+    echo "Generated : $(date)"
+    echo "Directory : $PWD"
+    echo "Tool      : CodeGather"
+    echo "======================================================================"
+    echo
+} > "$output"
+
+find . \
+    -type d \( \
+        -name .git -o \
+        -name .build -o \
+        -name Build -o \
+        -name DerivedData \
+    \) -prune -o \
+    -type f -name "*.swift" -print | sort |
+while IFS= read -r file
+do
+    {
+        echo "======================================================================"
+        echo "FILE: ${file}"
+        echo "======================================================================"
+        cat "$file"
+        echo
+    } >> "$output"
+done
+
+echo "Done."
+echo "Output written to:"
+echo "  ${output}"
