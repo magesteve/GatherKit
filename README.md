@@ -37,17 +37,31 @@ built GatherKit to automate the workflow.
 
 ### CodeGather
 
-**CodeGather** gathers Swift source files into a single timestamped
-document suitable for sharing with an AI assistant.
+**CodeGather** gathers recognized source-code and build-configuration
+files into a single timestamped document suitable for sharing with an
+AI assistant.
 
-Version 0.1 supports:
+By default, CodeGather gathers all supported source types. It currently
+recognizes files associated with:
 
--   Swift projects
--   macOS
--   zsh
+- Swift and Metal
+- C, C++, and Objective-C
+- Python
+- JavaScript and TypeScript
+- Java and Kotlin
+- Rust
+- Go
+- C#
+- Ruby
+- PHP
+- Shell scripting
+- Common build systems and package manifests
 
-Future versions will support additional programming languages,
-configurable file selection, and customizable output formats.
+Optional command-line filters can limit the gathered files to one or
+more language families. Additional filename patterns and path exclusions
+can also be supplied.
+
+CodeGather 0.2 currently requires zsh.
 
 ------------------------------------------------------------------------
 
