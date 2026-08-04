@@ -1,0 +1,370 @@
+#!/bin/zsh
+#
+# symbolgather
+#
+# Gathers symbol matches and the contents of matching files into one
+# timestamped text document for sharing with AI assistants.
+#
+# Part of GatherKit
+# https://github.com/magesteve/GatherKit
+#
+
+set -euo pipefail
+
+readonly VERSION="0.1"
+
+show_help() {
+    cat <<'EOF'
+symbolgather
+
+Usage:
+  symbolgather SYMBOL [options]
+
+Searches the current project for a symbol or text pattern, then gathers:
+  - Project and Git metadata
+  - A match index with file names and line numbers
+  - Matching source excerpts
+  - Full contents of every matching file
+
+Options:
+  --fixed             Treat SYMBOL as literal text instead of a regex
+  --ignore-case       Search without regard to letter case
+  --context LINES     Include this many lines around each match (default: 3)
+  --include PATTERN   Search only matching file names or paths
+                      May be supplied more than once
+  --exclude PATTERN   Exclude matching paths
+                      May be supplied more than once
+  --output FILE       Use a specific output filename
+  --version           Display the version
+  --help              Display this help
+
+Examples:
+  symbolgather AetherClock
+  symbolgather "AetherClockEvent"
+  symbolgather "class AetherClock" --fixed
+  symbolgather "render.*frame" --ignore-case
+  symbolgather AetherClock --include "*.swift"
+  symbolgather AetherClock --exclude "*/Tests/*"
+  symbolgather AetherClock --context 8
+  symbolgather AetherClock --output AetherClock-SymbolGather.txt
+EOF
+}
+
+if (( $# == 0 )); then
+    show_help
+    exit 1
+fi
+
+symbol=""
+fixed=false
+ignore_case=false
+context_lines=3
+output=""
+
+typeset -a include_patterns=()
+typeset -a exclude_patterns=()
+
+while (( $# > 0 )); do
+    case "$1" in
+        --fixed)
+            fixed=true
+            ;;
+
+        --ignore-case)
+            ignore_case=true
+            ;;
+
+        --context)
+            (( $# >= 2 )) || {
+                echo "Error: --context requires a non-negative integer." >&2
+                exit 1
+            }
+
+            if [[ "$2" != <-> ]]; then
+                echo "Error: --context requires a non-negative integer." >&2
+                exit 1
+            fi
+
+            context_lines="$2"
+            shift
+            ;;
+
+        --include)
+            (( $# >= 2 )) || {
+                echo "Error: --include requires a filename pattern." >&2
+                exit 1
+            }
+            include_patterns+=("$2")
+            shift
+            ;;
+
+        --exclude)
+            (( $# >= 2 )) || {
+                echo "Error: --exclude requires a path pattern." >&2
+                exit 1
+            }
+            exclude_patterns+=("$2")
+            shift
+            ;;
+
+        --output)
+            (( $# >= 2 )) || {
+                echo "Error: --output requires a filename." >&2
+                exit 1
+            }
+            output="$2"
+            shift
+            ;;
+
+        --version)
+            echo "symbolgather ${VERSION}"
+            exit 0
+            ;;
+
+        --help|-h)
+            show_help
+            exit 0
+            ;;
+
+        --*)
+            echo "Error: Unknown option: $1" >&2
+            echo "Run 'symbolgather --help' for usage." >&2
+            exit 1
+            ;;
+
+        *)
+            if [[ -n "$symbol" ]]; then
+                echo "Error: Only one SYMBOL may be supplied." >&2
+                exit 1
+            fi
+            symbol="$1"
+            ;;
+    esac
+
+    shift
+done
+
+if [[ -z "$symbol" ]]; then
+    echo "Error: SYMBOL is required." >&2
+    exit 1
+fi
+
+project_root="$PWD"
+
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    project_root=$(git rev-parse --show-toplevel)
+fi
+
+cd "$project_root"
+
+project=$(basename "$project_root")
+timestamp=$(date +"%Y%m%d-%H%M%S")
+
+safe_symbol=$(print -r -- "$symbol" | tr -cs '[:alnum:]_.-' '_' | sed 's/^_*//; s/_*$//')
+[[ -n "$safe_symbol" ]] || safe_symbol="symbol"
+
+if [[ -z "$output" ]]; then
+    output="${project}-${safe_symbol}-SymbolGather-${timestamp}.txt"
+fi
+
+exclude_patterns+=(
+    "$output"
+    "./$output"
+    "*-CodeGather-*.txt"
+    "*-DocGather-*.txt"
+    "*-ProjectGather-*.txt"
+    "*-ChangeGather-*.txt"
+    "*-ReviewGather-*.txt"
+    "*-SymbolGather-*.txt"
+)
+
+matches_includes() {
+    local file="$1"
+    local name="${file:t}"
+    local pattern
+
+    if (( ${#include_patterns[@]} == 0 )); then
+        return 0
+    fi
+
+    for pattern in "${include_patterns[@]}"; do
+        if [[ "$name" == ${~pattern} || "$file" == ${~pattern} ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+matches_excludes() {
+    local file="$1"
+    local pattern
+
+    for pattern in "${exclude_patterns[@]}"; do
+        if [[ "$file" == ${~pattern} ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+typeset -a candidate_files=()
+
+while IFS= read -r -d $'\0' file; do
+    matches_includes "$file" || continue
+    matches_excludes "$file" && continue
+    candidate_files+=("${file#./}")
+done < <(
+    find . \
+        -type d \( \
+            -name ".git" -o \
+            -name ".build" -o \
+            -name "build" -o \
+            -name "Build" -o \
+            -name "DerivedData" -o \
+            -name "Pods" -o \
+            -name "node_modules" -o \
+            -name "vendor" -o \
+            -name ".idea" -o \
+            -name ".vscode" -o \
+            -name ".dart_tool" -o \
+            -name ".pub-cache" \
+        \) -prune -o \
+        -type f -print0
+)
+
+if (( ${#candidate_files[@]} == 0 )); then
+    echo "No searchable files were found."
+    exit 0
+fi
+
+candidate_files=("${(@on)candidate_files}")
+
+typeset -a grep_options=(-nH)
+[[ "$fixed" == true ]] && grep_options+=(-F)
+[[ "$ignore_case" == true ]] && grep_options+=(-i)
+
+typeset -a matches=()
+typeset -A matching_file_set=()
+
+for file in "${candidate_files[@]}"; do
+    # Skip binary files.
+    if ! grep -Iq . "$file" 2>/dev/null; then
+        continue
+    fi
+
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        matches+=("$line")
+        match_file="${line%%:*}"
+        matching_file_set[$match_file]=1
+    done < <(grep "${grep_options[@]}" -- "$symbol" "$file" 2>/dev/null || true)
+done
+
+if (( ${#matches[@]} == 0 )); then
+    echo "No matches found for: ${symbol}"
+    exit 0
+fi
+
+typeset -a matching_files=("${(@ok)matching_file_set}")
+
+git_branch=""
+git_commit=""
+git_dirty=""
+
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git_branch=$(git branch --show-current 2>/dev/null || true)
+    git_commit=$(git rev-parse --short HEAD 2>/dev/null || true)
+
+    if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+        git_dirty="yes"
+    else
+        git_dirty="no"
+    fi
+fi
+
+write_context_for_file() {
+    local file="$1"
+    local line_number=""
+    local start_line=""
+    local end_line=""
+    local match_line=""
+
+    while IFS= read -r match_line; do
+        line_number="${match_line#*:}"
+        line_number="${line_number%%:*}"
+
+        if [[ "$line_number" != <-> ]]; then
+            continue
+        fi
+
+        start_line=$(( line_number - context_lines ))
+        (( start_line < 1 )) && start_line=1
+        end_line=$(( line_number + context_lines ))
+
+        echo "---------------------------------------------------------------------"
+        echo "${file}:${line_number}"
+        echo "---------------------------------------------------------------------"
+        sed -n "${start_line},${end_line}p" "$file" | nl -ba -v "$start_line"
+        echo
+    done < <(grep "${grep_options[@]}" -- "$symbol" "$file" 2>/dev/null || true)
+}
+
+{
+    echo "======================================================================"
+    echo "GatherKit SymbolGather"
+    echo "======================================================================"
+    echo "Project   : ${project}"
+    echo "Generated : $(date)"
+    echo "Tool      : symbolgather ${VERSION}"
+    echo "Symbol    : ${symbol}"
+    echo "Mode      : $([[ "$fixed" == true ]] && echo literal || echo regex)"
+    echo "Case      : $([[ "$ignore_case" == true ]] && echo insensitive || echo sensitive)"
+    echo "Context   : ${context_lines} lines"
+    echo "Matches   : ${#matches[@]}"
+    echo "Files     : ${#matching_files[@]}"
+
+    if [[ -n "$git_commit" ]]; then
+        echo "Git Branch: ${git_branch:-detached}"
+        echo "Git Commit: ${git_commit}"
+        echo "Git Dirty : ${git_dirty}"
+    fi
+
+    echo "======================================================================"
+    echo
+    echo "MATCH INDEX"
+    echo
+
+    for match in "${matches[@]}"; do
+        echo "$match"
+    done
+
+    echo
+    echo "======================================================================"
+    echo "MATCH CONTEXT"
+    echo "======================================================================"
+    echo
+
+    for file in "${matching_files[@]}"; do
+        write_context_for_file "$file"
+    done
+
+    echo
+    echo "======================================================================"
+    echo "MATCHING FILE CONTENTS"
+    echo "======================================================================"
+    echo
+
+    for file in "${matching_files[@]}"; do
+        echo "======================================================================"
+        echo "FILE: ${file}"
+        echo "======================================================================"
+        cat "$file"
+        echo
+        echo
+    done
+} > "$output"
+
+echo "Created ${output}"
+echo "Found ${#matches[@]} matches in ${#matching_files[@]} files."
