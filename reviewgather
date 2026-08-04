@@ -1,0 +1,422 @@
+#!/bin/zsh
+#
+# reviewgather
+#
+# Gathers changed files, unified diffs, and current file contents into one
+# timestamped review document for sharing with AI assistants.
+#
+# Part of GatherKit
+# https://github.com/magesteve/GatherKit
+#
+
+set -euo pipefail
+
+readonly VERSION="0.1"
+
+show_help() {
+    cat <<'EOF'
+reviewgather
+
+Usage:
+  reviewgather [options]
+
+By default, reviewgather gathers staged, unstaged, and untracked changes from
+the current Git working tree.
+
+The generated review document contains:
+  - Git metadata
+  - Changed-file index
+  - Unified diffs
+  - Current contents of changed files
+  - Deleted or unavailable file names
+
+Options:
+  --since REF         Review changes since a commit or branch
+  --range A..B        Review an explicit Git range
+  --staged            Review only staged changes
+  --unstaged          Review only unstaged tracked changes
+  --context LINES     Number of unified diff context lines (default: 3)
+  --include PATTERN   Include only matching files
+                      May be supplied more than once
+  --exclude PATTERN   Exclude matching paths
+                      May be supplied more than once
+  --output FILE       Use a specific output filename
+  --version           Display the version
+  --help              Display this help
+
+Examples:
+  reviewgather
+  reviewgather --since HEAD~3
+  reviewgather --since main
+  reviewgather --range main..feature-branch
+  reviewgather --staged
+  reviewgather --context 8
+  reviewgather --include "*.swift"
+  reviewgather --exclude "*/Generated/*"
+  reviewgather --output CurrentReview.txt
+EOF
+}
+
+typeset -a include_patterns=()
+typeset -a exclude_patterns=()
+
+mode="working"
+since_ref=""
+range_ref=""
+context_lines=3
+output=""
+
+while (( $# > 0 )); do
+    case "$1" in
+        --since)
+            (( $# >= 2 )) || {
+                echo "Error: --since requires a Git reference." >&2
+                exit 1
+            }
+            since_ref="$2"
+            mode="since"
+            shift
+            ;;
+
+        --range)
+            (( $# >= 2 )) || {
+                echo "Error: --range requires a Git range such as main..HEAD." >&2
+                exit 1
+            }
+            range_ref="$2"
+            mode="range"
+            shift
+            ;;
+
+        --staged)
+            mode="staged"
+            ;;
+
+        --unstaged)
+            mode="unstaged"
+            ;;
+
+        --context)
+            (( $# >= 2 )) || {
+                echo "Error: --context requires a non-negative integer." >&2
+                exit 1
+            }
+
+            if [[ "$2" != <-> ]]; then
+                echo "Error: --context requires a non-negative integer." >&2
+                exit 1
+            fi
+
+            context_lines="$2"
+            shift
+            ;;
+
+        --include)
+            (( $# >= 2 )) || {
+                echo "Error: --include requires a filename pattern." >&2
+                exit 1
+            }
+            include_patterns+=("$2")
+            shift
+            ;;
+
+        --exclude)
+            (( $# >= 2 )) || {
+                echo "Error: --exclude requires a path pattern." >&2
+                exit 1
+            }
+            exclude_patterns+=("$2")
+            shift
+            ;;
+
+        --output)
+            (( $# >= 2 )) || {
+                echo "Error: --output requires a filename." >&2
+                exit 1
+            }
+            output="$2"
+            shift
+            ;;
+
+        --version)
+            echo "reviewgather ${VERSION}"
+            exit 0
+            ;;
+
+        --help|-h)
+            show_help
+            exit 0
+            ;;
+
+        *)
+            echo "Error: Unknown option: $1" >&2
+            echo "Run 'reviewgather --help' for usage." >&2
+            exit 1
+            ;;
+    esac
+
+    shift
+done
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "Error: reviewgather must be run inside a Git repository." >&2
+    exit 1
+fi
+
+repository_root=$(git rev-parse --show-toplevel)
+cd "$repository_root"
+
+project=$(basename "$repository_root")
+timestamp=$(date +"%Y%m%d-%H%M%S")
+
+if [[ -z "$output" ]]; then
+    output="${project}-ReviewGather-${timestamp}.txt"
+fi
+
+exclude_patterns+=(
+    "$output"
+    "./$output"
+    "*-CodeGather-*.txt"
+    "*-DocGather-*.txt"
+    "*-ProjectGather-*.txt"
+    "*-ChangeGather-*.txt"
+    "*-ReviewGather-*.txt"
+)
+
+matches_includes() {
+    local file="$1"
+    local name="${file:t}"
+    local pattern
+
+    if (( ${#include_patterns[@]} == 0 )); then
+        return 0
+    fi
+
+    for pattern in "${include_patterns[@]}"; do
+        if [[ "$name" == ${~pattern} || "$file" == ${~pattern} ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+matches_excludes() {
+    local file="$1"
+    local pattern
+
+    for pattern in "${exclude_patterns[@]}"; do
+        if [[ "$file" == ${~pattern} ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+typeset -a candidates=()
+typeset -a untracked_files=()
+
+case "$mode" in
+    working)
+        while IFS= read -r -d $'\0' file; do
+            candidates+=("$file")
+        done < <(
+            {
+                git diff --name-only -z
+                git diff --cached --name-only -z
+                git ls-files --others --exclude-standard -z
+            }
+        )
+
+        while IFS= read -r -d $'\0' file; do
+            untracked_files+=("$file")
+        done < <(git ls-files --others --exclude-standard -z)
+        ;;
+
+    staged)
+        while IFS= read -r -d $'\0' file; do
+            candidates+=("$file")
+        done < <(git diff --cached --name-only -z)
+        ;;
+
+    unstaged)
+        while IFS= read -r -d $'\0' file; do
+            candidates+=("$file")
+        done < <(git diff --name-only -z)
+        ;;
+
+    since)
+        if ! git rev-parse --verify "$since_ref" >/dev/null 2>&1; then
+            echo "Error: Unknown Git reference: $since_ref" >&2
+            exit 1
+        fi
+
+        while IFS= read -r -d $'\0' file; do
+            candidates+=("$file")
+        done < <(git diff --name-only -z "${since_ref}...HEAD")
+        ;;
+
+    range)
+        while IFS= read -r -d $'\0' file; do
+            candidates+=("$file")
+        done < <(git diff --name-only -z "$range_ref")
+        ;;
+esac
+
+typeset -A seen=()
+typeset -a files=()
+typeset -a missing_files=()
+
+for file in "${candidates[@]}"; do
+    [[ -n "$file" ]] || continue
+    [[ -n "${seen[$file]-}" ]] && continue
+    seen[$file]=1
+
+    matches_includes "$file" || continue
+    matches_excludes "$file" && continue
+
+    if [[ -f "$file" ]]; then
+        files+=("$file")
+    else
+        missing_files+=("$file")
+    fi
+done
+
+files=("${(@on)files}")
+missing_files=("${(@on)missing_files}")
+untracked_files=("${(@on)untracked_files}")
+
+if (( ${#files[@]} == 0 && ${#missing_files[@]} == 0 )); then
+    echo "No matching changes were found."
+    exit 0
+fi
+
+git_branch=$(git branch --show-current 2>/dev/null || true)
+git_commit=$(git rev-parse --short HEAD 2>/dev/null || true)
+
+case "$mode" in
+    working)  selection="working tree: staged, unstaged, and untracked" ;;
+    staged)   selection="staged changes only" ;;
+    unstaged) selection="unstaged tracked changes only" ;;
+    since)    selection="changes since ${since_ref}" ;;
+    range)    selection="Git range ${range_ref}" ;;
+esac
+
+write_diff_section() {
+    echo "======================================================================"
+    echo "UNIFIED DIFF"
+    echo "======================================================================"
+    echo
+
+    case "$mode" in
+        working)
+            if ! git diff --quiet; then
+                echo "---------------------------------------------------------------------"
+                echo "UNSTAGED DIFF"
+                echo "---------------------------------------------------------------------"
+                git diff --unified="$context_lines" -- "${files[@]}" || true
+                echo
+            fi
+
+            if ! git diff --cached --quiet; then
+                echo "---------------------------------------------------------------------"
+                echo "STAGED DIFF"
+                echo "---------------------------------------------------------------------"
+                git diff --cached --unified="$context_lines" -- "${files[@]}" || true
+                echo
+            fi
+
+            typeset -A untracked_seen=()
+            local file
+
+            for file in "${untracked_files[@]}"; do
+                matches_includes "$file" || continue
+                matches_excludes "$file" && continue
+                [[ -f "$file" ]] || continue
+                [[ -n "${untracked_seen[$file]-}" ]] && continue
+                untracked_seen[$file]=1
+
+                echo "---------------------------------------------------------------------"
+                echo "UNTRACKED FILE: ${file}"
+                echo "---------------------------------------------------------------------"
+                git diff --no-index --unified="$context_lines" /dev/null "$file" || true
+                echo
+            done
+            ;;
+
+        staged)
+            git diff --cached --unified="$context_lines" -- "${files[@]}" || true
+            ;;
+
+        unstaged)
+            git diff --unified="$context_lines" -- "${files[@]}" || true
+            ;;
+
+        since)
+            git diff --unified="$context_lines" "${since_ref}...HEAD" -- "${files[@]}" || true
+            ;;
+
+        range)
+            git diff --unified="$context_lines" "$range_ref" -- "${files[@]}" || true
+            ;;
+    esac
+}
+
+{
+    echo "======================================================================"
+    echo "GatherKit ReviewGather"
+    echo "======================================================================"
+    echo "Project   : ${project}"
+    echo "Generated : $(date)"
+    echo "Tool      : reviewgather ${VERSION}"
+    echo "Selection : ${selection}"
+    echo "Git Branch: ${git_branch:-detached}"
+    echo "Git Commit: ${git_commit}"
+    echo "Context   : ${context_lines} lines"
+    echo "Files     : ${#files[@]}"
+    echo "Missing   : ${#missing_files[@]}"
+    echo "======================================================================"
+    echo
+    echo "REVIEW FILE INDEX"
+    echo
+
+    for file in "${files[@]}"; do
+        echo "$file"
+    done
+
+    if (( ${#missing_files[@]} > 0 )); then
+        echo
+        echo "DELETED OR UNAVAILABLE FILES"
+        echo
+
+        for file in "${missing_files[@]}"; do
+            echo "$file"
+        done
+    fi
+
+    echo
+    write_diff_section
+    echo
+    echo "======================================================================"
+    echo "CURRENT FILE CONTENTS"
+    echo "======================================================================"
+    echo
+
+    for file in "${files[@]}"; do
+        echo "======================================================================"
+        echo "FILE: ${file}"
+        echo "======================================================================"
+        cat "$file"
+        echo
+        echo
+    done
+} > "$output"
+
+echo "Created ${output}"
+echo "Gathered ${#files[@]} files for review."
+
+if (( ${#missing_files[@]} > 0 )); then
+    echo "Recorded ${#missing_files[@]} deleted or unavailable files."
+fi
+
