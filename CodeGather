@@ -2,50 +2,385 @@
 #
 # CodeGather
 #
-# Gather Swift source files into a single timestamped document suitable
-# for sharing with AI assistants.
+# Gathers source-code and build-configuration files into one timestamped
+# text document for sharing with AI assistants.
 #
 # Part of GatherKit
 # https://github.com/magesteve/GatherKit
 #
 
-set -e
+set -euo pipefail
+
+readonly VERSION="0.2"
+
+show_help() {
+    cat <<'EOF'
+CodeGather
+
+Usage:
+  CodeGather [options]
+
+Without a language option, CodeGather gathers every recognized source type.
+
+Language filters:
+  --swift            Swift and Metal
+  --cpp              C, C++, Objective-C, and related headers
+  --python           Python
+  --javascript       JavaScript and TypeScript
+  --java             Java and Kotlin
+  --rust             Rust
+  --go               Go
+  --csharp           C#
+  --ruby             Ruby
+  --php              PHP
+  --shell            Shell scripts
+
+Additional options:
+  --include PATTERN  Include an additional filename pattern
+                     May be supplied more than once
+  --exclude PATTERN  Exclude paths matching a shell pattern
+                     May be supplied more than once
+  --output FILE      Use a specific output filename
+  --version          Display the version
+  --help             Display this help
+
+Examples:
+  CodeGather
+  CodeGather --swift
+  CodeGather --swift --cpp
+  CodeGather --python --include "*.toml"
+  CodeGather --include "*.sql" --exclude "*/Generated/*"
+  CodeGather --output CurrentProject.txt
+EOF
+}
+
+# All recognized extensions used when no language filter is supplied.
+typeset -a all_patterns=(
+    "*.swift"
+    "*.metal"
+
+    "*.c"
+    "*.cc"
+    "*.cpp"
+    "*.cxx"
+    "*.h"
+    "*.hh"
+    "*.hpp"
+    "*.hxx"
+    "*.m"
+    "*.mm"
+
+    "*.py"
+    "*.pyw"
+
+    "*.js"
+    "*.jsx"
+    "*.mjs"
+    "*.cjs"
+    "*.ts"
+    "*.tsx"
+
+    "*.java"
+    "*.kt"
+    "*.kts"
+
+    "*.rs"
+    "*.go"
+    "*.cs"
+    "*.rb"
+    "*.php"
+
+    "*.sh"
+    "*.bash"
+    "*.zsh"
+    "*.fish"
+
+    "*.cmake"
+    "CMakeLists.txt"
+    "Makefile"
+    "makefile"
+    "GNUmakefile"
+    "Package.swift"
+    "Package.resolved"
+    "*.gradle"
+    "*.gradle.kts"
+    "build.gradle"
+    "settings.gradle"
+    "build.gradle.kts"
+    "settings.gradle.kts"
+    "Cargo.toml"
+    "Cargo.lock"
+    "go.mod"
+    "go.sum"
+    "pom.xml"
+)
+
+typeset -a selected_patterns=()
+typeset -a included_patterns=()
+typeset -a excluded_patterns=()
+
+language_filter_selected=false
+output=""
+
+add_patterns() {
+    selected_patterns+=("$@")
+    language_filter_selected=true
+}
+
+while (( $# > 0 )); do
+    case "$1" in
+        --swift)
+            add_patterns \
+                "*.swift" \
+                "*.metal" \
+                "Package.swift" \
+                "Package.resolved"
+            ;;
+
+        --cpp|--c|--objective-c)
+            add_patterns \
+                "*.c" \
+                "*.cc" \
+                "*.cpp" \
+                "*.cxx" \
+                "*.h" \
+                "*.hh" \
+                "*.hpp" \
+                "*.hxx" \
+                "*.m" \
+                "*.mm" \
+                "*.cmake" \
+                "CMakeLists.txt" \
+                "Makefile" \
+                "makefile" \
+                "GNUmakefile"
+            ;;
+
+        --python)
+            add_patterns "*.py" "*.pyw"
+            ;;
+
+        --javascript|--typescript|--js)
+            add_patterns \
+                "*.js" \
+                "*.jsx" \
+                "*.mjs" \
+                "*.cjs" \
+                "*.ts" \
+                "*.tsx"
+            ;;
+
+        --java|--kotlin)
+            add_patterns \
+                "*.java" \
+                "*.kt" \
+                "*.kts" \
+                "*.gradle" \
+                "*.gradle.kts" \
+                "build.gradle" \
+                "settings.gradle" \
+                "build.gradle.kts" \
+                "settings.gradle.kts" \
+                "pom.xml"
+            ;;
+
+        --rust)
+            add_patterns "*.rs" "Cargo.toml" "Cargo.lock"
+            ;;
+
+        --go)
+            add_patterns "*.go" "go.mod" "go.sum"
+            ;;
+
+        --csharp)
+            add_patterns "*.cs"
+            ;;
+
+        --ruby)
+            add_patterns "*.rb"
+            ;;
+
+        --php)
+            add_patterns "*.php"
+            ;;
+
+        --shell)
+            add_patterns "*.sh" "*.bash" "*.zsh" "*.fish"
+            ;;
+
+        --include)
+            if (( $# < 2 )); then
+                echo "Error: --include requires a filename pattern." >&2
+                exit 1
+            fi
+
+            included_patterns+=("$2")
+            shift
+            ;;
+
+        --exclude)
+            if (( $# < 2 )); then
+                echo "Error: --exclude requires a path pattern." >&2
+                exit 1
+            fi
+
+            excluded_patterns+=("$2")
+            shift
+            ;;
+
+        --output)
+            if (( $# < 2 )); then
+                echo "Error: --output requires a filename." >&2
+                exit 1
+            fi
+
+            output="$2"
+            shift
+            ;;
+
+        --version)
+            echo "CodeGather ${VERSION}"
+            exit 0
+            ;;
+
+        --help|-h)
+            show_help
+            exit 0
+            ;;
+
+        *)
+            echo "Error: Unknown option: $1" >&2
+            echo "Run 'CodeGather --help' for usage." >&2
+            exit 1
+            ;;
+    esac
+
+    shift
+done
+
+if [[ "$language_filter_selected" == false ]]; then
+    selected_patterns=("${all_patterns[@]}")
+fi
+
+selected_patterns+=("${included_patterns[@]}")
+
+if (( ${#selected_patterns[@]} == 0 )); then
+    echo "Error: No file patterns were selected." >&2
+    exit 1
+fi
 
 timestamp=$(date +"%Y%m%d-%H%M%S")
 project=$(basename "$PWD")
-output="${project}-CodeGather-${timestamp}.txt"
 
-echo "Creating ${output}..."
+if [[ -z "$output" ]]; then
+    output="${project}-CodeGather-${timestamp}.txt"
+fi
+
+# Never gather the output file itself.
+excluded_patterns+=("./${output}" "${output}")
+
+# Standard directories that should not be searched.
+typeset -a pruned_directories=(
+    ".git"
+    ".build"
+    "build"
+    "Build"
+    "DerivedData"
+    "Pods"
+    "node_modules"
+    "vendor"
+    ".idea"
+    ".vscode"
+)
+
+matches_exclusion() {
+    local file="$1"
+    local pattern
+
+    for pattern in "${excluded_patterns[@]}"; do
+        if [[ "$file" == ${~pattern} ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+typeset -a files=()
+local_file=""
+local_name=""
+local_pattern=""
+matched=false
+
+# Use find only to traverse files. Pattern matching is handled in zsh so that
+# optional filters and user-supplied patterns remain straightforward.
+while IFS= read -r -d $'\0' local_file; do
+    local_name="${local_file:t}"
+    matched=false
+
+    for local_pattern in "${selected_patterns[@]}"; do
+        if [[ "$local_name" == ${~local_pattern} ]]; then
+            matched=true
+            break
+        fi
+    done
+
+    if [[ "$matched" == true ]] && ! matches_exclusion "$local_file"; then
+        files+=("$local_file")
+    fi
+done < <(
+    find . \
+        -type d \( \
+            -name ".git" -o \
+            -name ".build" -o \
+            -name "build" -o \
+            -name "Build" -o \
+            -name "DerivedData" -o \
+            -name "Pods" -o \
+            -name "node_modules" -o \
+            -name "vendor" -o \
+            -name ".idea" -o \
+            -name ".vscode" \
+        \) -prune -o \
+        -type f -print0
+)
+
+if (( ${#files[@]} == 0 )); then
+    echo "No matching source files were found."
+    exit 0
+fi
+
+# Produce deterministic output.
+files=("${(@on)files}")
 
 {
     echo "======================================================================"
+    echo "GatherKit CodeGather"
+    echo "======================================================================"
     echo "Project   : ${project}"
     echo "Generated : $(date)"
-    echo "Directory : $PWD"
-    echo "Tool      : CodeGather"
+    echo "Tool      : CodeGather ${VERSION}"
+    echo "Files     : ${#files[@]}"
     echo "======================================================================"
     echo
+    echo "FILE INDEX"
+    echo
+
+    for local_file in "${files[@]}"; do
+        echo "${local_file#./}"
+    done
+
+    echo
+
+    for local_file in "${files[@]}"; do
+        echo "======================================================================"
+        echo "FILE: ${local_file#./}"
+        echo "======================================================================"
+        cat "$local_file"
+        echo
+        echo
+    done
 } > "$output"
 
-find . \
-    -type d \( \
-        -name .git -o \
-        -name .build -o \
-        -name Build -o \
-        -name DerivedData \
-    \) -prune -o \
-    -type f -name "*.swift" -print | sort |
-while IFS= read -r file
-do
-    {
-        echo "======================================================================"
-        echo "FILE: ${file}"
-        echo "======================================================================"
-        cat "$file"
-        echo
-    } >> "$output"
-done
-
-echo "Done."
-echo "Output written to:"
-echo "  ${output}"
+echo "Created ${output}"
+echo "Gathered ${#files[@]} files."
