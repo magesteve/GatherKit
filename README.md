@@ -1,104 +1,162 @@
 # GatherKit
 
-**GatherKit** is an open-source collection of command-line utilities that prepare software projects for AI collaboration.
+**GatherKit** is an open-source collection of command-line tools that
+gather project context for AI-assisted software development.
 
-Today's AI assistants are remarkably capable, but they still rely on developers to provide the right context. GatherKit automates the repetitive task of gathering source code, documentation, configuration files, and other project information into a consistent format, allowing you to spend less time preparing context and more time solving problems.
+Today's AI assistants are remarkably capable, but they still depend on
+developers to provide the right context. GatherKit automates the
+repetitive task of gathering source code, documentation, configuration
+files, and other project information into a consistent format, allowing
+you to spend less time preparing context and more time solving problems.
 
-GatherKit doesn't perform AI—it prepares projects so today's AI assistants can understand them more effectively.
+> **GatherKit doesn't perform AI---it prepares projects so today's AI
+> assistants can understand software projects more effectively.**
 
----
+------------------------------------------------------------------------
 
 ## Why GatherKit?
 
-While developing the open-source **AetherCircle** framework, I found myself repeatedly performing the same steps before asking an AI assistant for help:
+While developing my open-source VR framework, **AetherCircle**, I found
+myself repeatedly performing the same steps before asking an AI
+assistant for help:
 
-- Gathering relevant source files
-- Collecting related documentation
-- Including project configuration
-- Explaining recent changes
-- Describing the overall project structure
+-   Gather relevant source files
+-   Collect supporting documentation
+-   Include project configuration
+-   Explain recent changes
+-   Describe the overall project structure
 
-The process was repetitive, time-consuming, and easy to forget.
+The process was repetitive, time-consuming, and easy to overlook.
 
-GatherKit was created to automate that workflow.
+Rather than repeating the same manual steps for every conversation, I
+built GatherKit to automate the workflow.
 
----
+------------------------------------------------------------------------
 
-## Current Utilities
+## Current Gatherers
 
 ### CodeGather
 
-Collects source files into a single timestamped document suitable for sharing with an AI assistant.
+**CodeGather** gathers Swift source files into a single timestamped
+document suitable for sharing with an AI assistant.
 
-Future versions will support multiple languages, project metadata, and customizable output formats.
+Version 0.1 supports:
 
----
+-   Swift projects
+-   macOS
+-   zsh
 
-## Planned Utilities
+Future versions will support additional programming languages,
+configurable file selection, and customizable output formats.
 
-| Utility | Purpose |
-|---------|---------|
-| **CodeGather** | Gather source code |
-| **DocGather** | Gather project documentation |
-| **ProjectGather** | Gather an entire project context |
-| **ChangeGather** | Gather only files changed since a commit |
-| **ReviewGather** | Gather everything needed for code review |
-| **SymbolGather** | Gather definitions and references for a symbol |
+------------------------------------------------------------------------
 
-Additional tools will be added as new workflows emerge.
+## Vision
 
----
+GatherKit begins with **CodeGather**, but the larger goal is a family of
+small, focused tools that gather different kinds of project context for
+different kinds of AI conversations.
+
+  -----------------------------------------------------------------------
+  Gatherer                              Purpose
+  ------------------------------------- ---------------------------------
+  **CodeGather**                        Gather source code
+
+  **DocGather**                         Gather project documentation
+
+  **ProjectGather**                     Gather source, documentation, and
+                                        configuration into a complete
+                                        project context
+
+  **ChangeGather**                      Gather only files changed since a
+                                        commit or branch
+
+  **ReviewGather**                      Gather everything needed for a
+                                        code review
+
+  **SymbolGather**                      Gather every definition and
+                                        reference for a symbol
+  -----------------------------------------------------------------------
+
+Additional gatherers will be added as new workflows emerge.
+
+------------------------------------------------------------------------
 
 ## Philosophy
 
-Most discussions about AI-assisted software development focus on **prompt engineering**—how developers communicate with AI.
+Most discussions about AI-assisted software development focus on
+**prompt engineering**---how developers communicate with AI.
 
 GatherKit focuses on the other half of the conversation:
 
-> **How can a project communicate more effectively with AI?**
+> **How can a software project communicate more effectively with AI?**
 
-The goal isn't to replace IDE integrations or future AI capabilities. As development tools continue to evolve, many of GatherKit's features may eventually become unnecessary.
+AI development tools are improving rapidly. Many already integrate with
+Git repositories, IDEs, issue trackers, and documentation systems. As
+these capabilities mature, much of what GatherKit does today may
+eventually become built into our development environments.
 
-Until then, GatherKit provides a simple, repeatable workflow for preparing project context for today's AI assistants.
+Until then, GatherKit provides a lightweight, repeatable workflow for
+preparing project context for today's AI assistants.
 
----
+------------------------------------------------------------------------
 
 ## Installation
 
 Clone the repository:
 
-```bash
+``` bash
 git clone https://github.com/magesteve/GatherKit.git
 cd GatherKit
 chmod +x CodeGather
 ```
 
-You can run it directly:
+Run directly:
 
-```bash
-/path/to/GatherKit/CodeGather
+``` bash
+./CodeGather
 ```
 
-To make it available as a normal terminal command:
+Or install it as a command available from anywhere:
 
-```bash
+``` bash
 sudo cp CodeGather /usr/local/bin/CodeGather
 ```
 
-Then, from the root of a Swift project:
+Then, from the root of any supported Swift project:
 
-```bash
+``` bash
 CodeGather
 ```
----
+
+------------------------------------------------------------------------
+
+## Roadmap
+
+-   [x] CodeGather (Swift)
+-   [ ] CodeGather (C/C++)
+-   [ ] CodeGather (Objective-C)
+-   [ ] CodeGather (Python)
+-   [ ] CodeGather (Java/Kotlin)
+-   [ ] DocGather
+-   [ ] ProjectGather
+-   [ ] ChangeGather
+-   [ ] ReviewGather
+-   [ ] SymbolGather
+-   [ ] Homebrew installation
+-   [ ] Windows PowerShell support
+-   [ ] Linux support
+
+------------------------------------------------------------------------
 
 ## Contributing
 
-Ideas, bug reports, feature requests, and pull requests are always welcome.
+Ideas, bug reports, feature requests, and pull requests are welcome.
 
-GatherKit is intentionally designed to remain lightweight, portable, and easy to understand.
+GatherKit is intentionally designed to remain lightweight, portable, and
+easy to understand.
 
----
+------------------------------------------------------------------------
 
 ## License
 
@@ -106,10 +164,12 @@ GatherKit is released under the MIT License.
 
 See the LICENSE file for details.
 
----
+------------------------------------------------------------------------
 
 ## Related Article
 
 **Teaching Your Project to Talk to AI**
 
-The accompanying article explains the motivation behind GatherKit, how it fits into modern AI-assisted development, and why project context is becoming as important as prompt engineering.
+This article explains the motivation behind GatherKit, how it fits into
+modern AI-assisted software development, and why project context may
+become as important as prompt engineering.
