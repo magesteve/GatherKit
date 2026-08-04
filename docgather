@@ -1,0 +1,216 @@
+#!/bin/zsh
+#
+# docgather
+#
+# Gathers project documentation into one timestamped text document for
+# sharing with AI assistants.
+#
+# Part of GatherKit
+# https://github.com/magesteve/GatherKit
+#
+
+set -euo pipefail
+
+readonly VERSION="0.1"
+
+show_help() {
+    cat <<'EOF'
+docgather
+
+Usage:
+  docgather [options]
+
+By default, docgather gathers recognized documentation files.
+
+Options:
+  --include PATTERN  Include an additional filename pattern
+                     May be supplied more than once
+  --exclude PATTERN  Exclude paths matching a shell pattern
+                     May be supplied more than once
+  --output FILE      Use a specific output filename
+  --version          Display the version
+  --help             Display this help
+
+Recognized documentation includes Markdown, reStructuredText, AsciiDoc,
+plain-text documentation, and common project documents such as README,
+CHANGELOG, CONTRIBUTING, SECURITY, AUTHORS, and CODE_OF_CONDUCT.
+
+Examples:
+  docgather
+  docgather --include "*.wiki"
+  docgather --exclude "*/Archive/*"
+  docgather --output CurrentDocumentation.txt
+EOF
+}
+
+typeset -a patterns=(
+    "*.md"
+    "*.markdown"
+    "*.mdown"
+    "*.mkd"
+    "*.rst"
+    "*.adoc"
+    "*.asciidoc"
+
+    "README"
+    "README.*"
+    "CHANGELOG"
+    "CHANGELOG.*"
+    "CONTRIBUTING"
+    "CONTRIBUTING.*"
+    "SECURITY"
+    "SECURITY.*"
+    "AUTHORS"
+    "AUTHORS.*"
+    "CODE_OF_CONDUCT"
+    "CODE_OF_CONDUCT.*"
+    "SUPPORT"
+    "SUPPORT.*"
+    "ROADMAP"
+    "ROADMAP.*"
+)
+
+typeset -a excluded_patterns=()
+output=""
+
+while (( $# > 0 )); do
+    case "$1" in
+        --include)
+            (( $# >= 2 )) || { echo "Error: --include requires a filename pattern." >&2; exit 1; }
+            patterns+=("$2")
+            shift
+            ;;
+
+        --exclude)
+            (( $# >= 2 )) || { echo "Error: --exclude requires a path pattern." >&2; exit 1; }
+            excluded_patterns+=("$2")
+            shift
+            ;;
+
+        --output)
+            (( $# >= 2 )) || { echo "Error: --output requires a filename." >&2; exit 1; }
+            output="$2"
+            shift
+            ;;
+
+        --version)
+            echo "docgather ${VERSION}"
+            exit 0
+            ;;
+
+        --help|-h)
+            show_help
+            exit 0
+            ;;
+
+        *)
+            echo "Error: Unknown option: $1" >&2
+            echo "Run 'docgather --help' for usage." >&2
+            exit 1
+            ;;
+    esac
+
+    shift
+done
+
+timestamp=$(date +"%Y%m%d-%H%M%S")
+project=$(basename "$PWD")
+
+if [[ -z "$output" ]]; then
+    output="${project}-docgather-${timestamp}.txt"
+fi
+
+excluded_patterns+=("./${output}" "${output}" "*-CodeGather-*.txt" "*-docgather-*.txt" "*-ProjectGather-*.txt")
+
+matches_exclusion() {
+    local file="$1"
+    local pattern
+
+    for pattern in "${excluded_patterns[@]}"; do
+        if [[ "$file" == ${~pattern} ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+typeset -a files=()
+local_file=""
+local_name=""
+local_pattern=""
+matched=false
+
+while IFS= read -r -d $'\0' local_file; do
+    local_name="${local_file:t}"
+    matched=false
+
+    for local_pattern in "${patterns[@]}"; do
+        if [[ "$local_name" == ${~local_pattern} ]]; then
+            matched=true
+            break
+        fi
+    done
+
+    if [[ "$matched" == true ]] && ! matches_exclusion "$local_file"; then
+        files+=("$local_file")
+    fi
+done < <(
+    find . \
+        -type d \( \
+            -name ".git" -o \
+            -name ".build" -o \
+            -name "build" -o \
+            -name "Build" -o \
+            -name "DerivedData" -o \
+            -name "Pods" -o \
+            -name "node_modules" -o \
+            -name "vendor" -o \
+            -name ".idea" -o \
+            -name ".vscode" -o \
+            -name ".dart_tool" -o \
+            -name ".pub-cache" \
+        \) -prune -o \
+        -type f -print0
+)
+
+if (( ${#files[@]} == 0 )); then
+    echo "No matching documentation files were found."
+    exit 0
+fi
+
+files=("${(@on)files}")
+
+{
+    echo "======================================================================"
+    echo "GatherKit DocGather"
+    echo "======================================================================"
+    echo "Project   : ${project}"
+    echo "Generated : $(date)"
+    echo "Tool      : docgather ${VERSION}"
+    echo "Files     : ${#files[@]}"
+    echo "======================================================================"
+    echo
+    echo "DOCUMENT INDEX"
+    echo
+
+    for local_file in "${files[@]}"; do
+        echo "${local_file#./}"
+    done
+
+    echo
+
+    for local_file in "${files[@]}"; do
+        echo "======================================================================"
+        echo "DOCUMENT: ${local_file#./}"
+        echo "======================================================================"
+        cat "$local_file"
+        echo
+        echo
+    done
+} > "$output"
+
+echo "Created ${output}"
+echo "Gathered ${#files[@]} documentation files."
+
+  
