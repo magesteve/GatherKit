@@ -9,10 +9,7 @@ repetitive task of gathering source code, documentation, configuration
 files, and other project information into a consistent format, allowing
 you to spend less time preparing context and more time solving problems.
 
-> **GatherKit doesn't perform AI---it prepares projects so today's AI
-> assistants can understand software projects more effectively.**
-
-------------------------------------------------------------------------
+---
 
 ## Why GatherKit?
 
@@ -31,7 +28,7 @@ The process was repetitive, time-consuming, and easy to overlook.
 Rather than repeating the same manual steps for every conversation, I
 built GatherKit to automate the workflow.
 
-------------------------------------------------------------------------
+---
 
 ## Current Gatherers
 
@@ -63,7 +60,7 @@ can also be supplied.
 
 CodeGather 0.2 currently requires zsh.
 
-------------------------------------------------------------------------
+---
 
 ## Vision
 
@@ -94,7 +91,7 @@ different kinds of AI conversations.
 
 Additional gatherers will be added as new workflows emerge.
 
-------------------------------------------------------------------------
+---
 
 ## Philosophy
 
@@ -113,7 +110,7 @@ eventually become built into our development environments.
 Until then, GatherKit provides a lightweight, repeatable workflow for
 preparing project context for today's AI assistants.
 
-------------------------------------------------------------------------
+---
 
 ## Installation
 
@@ -143,7 +140,7 @@ Then, from the root of any software project:
 CodeGather
 ```
 
-------------------------------------------------------------------------
+---
 
 ## Roadmap
 
@@ -166,7 +163,7 @@ Ideas, bug reports, feature requests, and pull requests are welcome.
 GatherKit is intentionally designed to remain lightweight, portable, and
 easy to understand.
 
-------------------------------------------------------------------------
+---
 
 ## License
 
@@ -174,7 +171,7 @@ GatherKit is released under the MIT License.
 
 See the LICENSE file for details.
 
-------------------------------------------------------------------------
+---
 
 ## Related Article
 
