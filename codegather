@@ -11,19 +11,20 @@
 
 set -euo pipefail
 
-readonly VERSION="0.2"
+readonly VERSION="0.3"
 
 show_help() {
     cat <<'EOF'
-CodeGather
+codegather
 
 Usage:
-  CodeGather [options]
+  codegather [options]
 
-Without a language option, CodeGather gathers every recognized source type.
+Without a language option, codegather gathers every recognized source type.
 
 Language filters:
   --swift            Swift and Metal
+  --dart             Dart and Flutter project files
   --cpp              C, C++, Objective-C, and related headers
   --python           Python
   --javascript       JavaScript and TypeScript
@@ -45,44 +46,29 @@ Additional options:
   --help             Display this help
 
 Examples:
-  CodeGather
-  CodeGather --swift
-  CodeGather --swift --cpp
-  CodeGather --python --include "*.toml"
-  CodeGather --include "*.sql" --exclude "*/Generated/*"
-  CodeGather --output CurrentProject.txt
+  codegather
+  codegather --dart
+  codegather --swift --cpp
+  codegather --dart --include "*.arb"
+  codegather --include "*.sql" --exclude "*/Generated/*"
+  codegather --output CurrentProject.txt
 EOF
 }
 
-# All recognized extensions used when no language filter is supplied.
 typeset -a all_patterns=(
-    "*.swift"
-    "*.metal"
+    "*.swift" "*.metal"
+    "*.dart"
 
-    "*.c"
-    "*.cc"
-    "*.cpp"
-    "*.cxx"
-    "*.h"
-    "*.hh"
-    "*.hpp"
-    "*.hxx"
-    "*.m"
-    "*.mm"
+    "*.c" "*.cc" "*.cpp" "*.cxx"
+    "*.h" "*.hh" "*.hpp" "*.hxx"
+    "*.m" "*.mm"
 
-    "*.py"
-    "*.pyw"
+    "*.py" "*.pyw"
 
-    "*.js"
-    "*.jsx"
-    "*.mjs"
-    "*.cjs"
-    "*.ts"
-    "*.tsx"
+    "*.js" "*.jsx" "*.mjs" "*.cjs"
+    "*.ts" "*.tsx"
 
-    "*.java"
-    "*.kt"
-    "*.kts"
+    "*.java" "*.kt" "*.kts"
 
     "*.rs"
     "*.go"
@@ -90,28 +76,32 @@ typeset -a all_patterns=(
     "*.rb"
     "*.php"
 
-    "*.sh"
-    "*.bash"
-    "*.zsh"
-    "*.fish"
+    "*.sh" "*.bash" "*.zsh" "*.fish"
 
     "*.cmake"
     "CMakeLists.txt"
-    "Makefile"
-    "makefile"
-    "GNUmakefile"
+    "Makefile" "makefile" "GNUmakefile"
+
     "Package.swift"
     "Package.resolved"
+
+    "pubspec.yaml"
+    "pubspec.lock"
+    "analysis_options.yaml"
+
     "*.gradle"
     "*.gradle.kts"
     "build.gradle"
     "settings.gradle"
     "build.gradle.kts"
     "settings.gradle.kts"
+
     "Cargo.toml"
     "Cargo.lock"
+
     "go.mod"
     "go.sum"
+
     "pom.xml"
 )
 
@@ -130,30 +120,24 @@ add_patterns() {
 while (( $# > 0 )); do
     case "$1" in
         --swift)
+            add_patterns "*.swift" "*.metal" "Package.swift" "Package.resolved"
+            ;;
+
+        --dart|--flutter)
             add_patterns \
-                "*.swift" \
-                "*.metal" \
-                "Package.swift" \
-                "Package.resolved"
+                "*.dart" \
+                "pubspec.yaml" \
+                "pubspec.lock" \
+                "analysis_options.yaml"
             ;;
 
         --cpp|--c|--objective-c)
             add_patterns \
-                "*.c" \
-                "*.cc" \
-                "*.cpp" \
-                "*.cxx" \
-                "*.h" \
-                "*.hh" \
-                "*.hpp" \
-                "*.hxx" \
-                "*.m" \
-                "*.mm" \
-                "*.cmake" \
-                "CMakeLists.txt" \
-                "Makefile" \
-                "makefile" \
-                "GNUmakefile"
+                "*.c" "*.cc" "*.cpp" "*.cxx" \
+                "*.h" "*.hh" "*.hpp" "*.hxx" \
+                "*.m" "*.mm" \
+                "*.cmake" "CMakeLists.txt" \
+                "Makefile" "makefile" "GNUmakefile"
             ;;
 
         --python)
@@ -161,26 +145,15 @@ while (( $# > 0 )); do
             ;;
 
         --javascript|--typescript|--js)
-            add_patterns \
-                "*.js" \
-                "*.jsx" \
-                "*.mjs" \
-                "*.cjs" \
-                "*.ts" \
-                "*.tsx"
+            add_patterns "*.js" "*.jsx" "*.mjs" "*.cjs" "*.ts" "*.tsx"
             ;;
 
         --java|--kotlin)
             add_patterns \
-                "*.java" \
-                "*.kt" \
-                "*.kts" \
-                "*.gradle" \
-                "*.gradle.kts" \
-                "build.gradle" \
-                "settings.gradle" \
-                "build.gradle.kts" \
-                "settings.gradle.kts" \
+                "*.java" "*.kt" "*.kts" \
+                "*.gradle" "*.gradle.kts" \
+                "build.gradle" "settings.gradle" \
+                "build.gradle.kts" "settings.gradle.kts" \
                 "pom.xml"
             ;;
 
@@ -209,37 +182,25 @@ while (( $# > 0 )); do
             ;;
 
         --include)
-            if (( $# < 2 )); then
-                echo "Error: --include requires a filename pattern." >&2
-                exit 1
-            fi
-
+            (( $# >= 2 )) || { echo "Error: --include requires a filename pattern." >&2; exit 1; }
             included_patterns+=("$2")
             shift
             ;;
 
         --exclude)
-            if (( $# < 2 )); then
-                echo "Error: --exclude requires a path pattern." >&2
-                exit 1
-            fi
-
+            (( $# >= 2 )) || { echo "Error: --exclude requires a path pattern." >&2; exit 1; }
             excluded_patterns+=("$2")
             shift
             ;;
 
         --output)
-            if (( $# < 2 )); then
-                echo "Error: --output requires a filename." >&2
-                exit 1
-            fi
-
+            (( $# >= 2 )) || { echo "Error: --output requires a filename." >&2; exit 1; }
             output="$2"
             shift
             ;;
 
         --version)
-            echo "CodeGather ${VERSION}"
+            echo "codegather ${VERSION}"
             exit 0
             ;;
 
@@ -250,7 +211,7 @@ while (( $# > 0 )); do
 
         *)
             echo "Error: Unknown option: $1" >&2
-            echo "Run 'CodeGather --help' for usage." >&2
+            echo "Run 'codegather --help' for usage." >&2
             exit 1
             ;;
     esac
@@ -264,34 +225,14 @@ fi
 
 selected_patterns+=("${included_patterns[@]}")
 
-if (( ${#selected_patterns[@]} == 0 )); then
-    echo "Error: No file patterns were selected." >&2
-    exit 1
-fi
-
 timestamp=$(date +"%Y%m%d-%H%M%S")
 project=$(basename "$PWD")
 
 if [[ -z "$output" ]]; then
-    output="${project}-CodeGather-${timestamp}.txt"
+    output="${project}-codegather-${timestamp}.txt"
 fi
 
-# Never gather the output file itself.
-excluded_patterns+=("./${output}" "${output}")
-
-# Standard directories that should not be searched.
-typeset -a pruned_directories=(
-    ".git"
-    ".build"
-    "build"
-    "Build"
-    "DerivedData"
-    "Pods"
-    "node_modules"
-    "vendor"
-    ".idea"
-    ".vscode"
-)
+excluded_patterns+=("./${output}" "${output}" "*-codegather-*.txt" "*-DocGather-*.txt" "*-ProjectGather-*.txt")
 
 matches_exclusion() {
     local file="$1"
@@ -312,8 +253,6 @@ local_name=""
 local_pattern=""
 matched=false
 
-# Use find only to traverse files. Pattern matching is handled in zsh so that
-# optional filters and user-supplied patterns remain straightforward.
 while IFS= read -r -d $'\0' local_file; do
     local_name="${local_file:t}"
     matched=false
@@ -340,7 +279,9 @@ done < <(
             -name "node_modules" -o \
             -name "vendor" -o \
             -name ".idea" -o \
-            -name ".vscode" \
+            -name ".vscode" -o \
+            -name ".dart_tool" -o \
+            -name ".pub-cache" \
         \) -prune -o \
         -type f -print0
 )
@@ -350,7 +291,6 @@ if (( ${#files[@]} == 0 )); then
     exit 0
 fi
 
-# Produce deterministic output.
 files=("${(@on)files}")
 
 {
@@ -359,7 +299,7 @@ files=("${(@on)files}")
     echo "======================================================================"
     echo "Project   : ${project}"
     echo "Generated : $(date)"
-    echo "Tool      : CodeGather ${VERSION}"
+    echo "Tool      : codegather ${VERSION}"
     echo "Files     : ${#files[@]}"
     echo "======================================================================"
     echo
