@@ -1,0 +1,258 @@
+#!/bin/zsh
+#
+# projectgather
+#
+# Gathers source code, documentation, and common project configuration
+# into one timestamped text document for sharing with AI assistants.
+#
+# Part of GatherKit
+# https://github.com/magesteve/GatherKit
+#
+
+set -euo pipefail
+
+readonly VERSION="0.1"
+
+show_help() {
+    cat <<'EOF'
+projectgather
+
+Usage:
+  projectgather [options]
+
+By default, projectgather gathers recognized source code, documentation,
+build files, and common project configuration files.
+
+Options:
+  --include PATTERN  Include an additional filename pattern
+                     May be supplied more than once
+  --exclude PATTERN  Exclude paths matching a shell pattern
+                     May be supplied more than once
+  --output FILE      Use a specific output filename
+  --version          Display the version
+  --help             Display this help
+
+Examples:
+  projectgather
+  projectgather --include "*.sql"
+  projectgather --exclude "*/Generated/*"
+  projectgather --output CurrentProject.txt
+EOF
+}
+
+typeset -a patterns=(
+    # Source
+    "*.swift" "*.metal"
+    "*.dart"
+    "*.c" "*.cc" "*.cpp" "*.cxx"
+    "*.h" "*.hh" "*.hpp" "*.hxx"
+    "*.m" "*.mm"
+    "*.py" "*.pyw"
+    "*.js" "*.jsx" "*.mjs" "*.cjs"
+    "*.ts" "*.tsx"
+    "*.java" "*.kt" "*.kts"
+    "*.rs" "*.go" "*.cs" "*.rb" "*.php"
+    "*.sh" "*.bash" "*.zsh" "*.fish"
+
+    # Documentation
+    "*.md" "*.markdown" "*.mdown" "*.mkd"
+    "*.rst" "*.adoc" "*.asciidoc"
+    "README" "README.*"
+    "CHANGELOG" "CHANGELOG.*"
+    "CONTRIBUTING" "CONTRIBUTING.*"
+    "SECURITY" "SECURITY.*"
+    "AUTHORS" "AUTHORS.*"
+    "CODE_OF_CONDUCT" "CODE_OF_CONDUCT.*"
+    "SUPPORT" "SUPPORT.*"
+    "ROADMAP" "ROADMAP.*"
+
+    # Build and package definitions
+    "*.cmake"
+    "CMakeLists.txt"
+    "Makefile" "makefile" "GNUmakefile"
+    "Package.swift" "Package.resolved"
+    "pubspec.yaml" "pubspec.lock" "analysis_options.yaml"
+    "*.gradle" "*.gradle.kts"
+    "build.gradle" "settings.gradle"
+    "build.gradle.kts" "settings.gradle.kts"
+    "Cargo.toml" "Cargo.lock"
+    "go.mod" "go.sum"
+    "pom.xml"
+
+    # Common project configuration
+    ".gitignore"
+    ".gitattributes"
+    ".editorconfig"
+    "*.xcconfig"
+    "*.entitlements"
+    "Info.plist"
+    "Dockerfile"
+    "docker-compose.yml"
+    "docker-compose.yaml"
+)
+
+typeset -a excluded_patterns=()
+output=""
+
+while (( $# > 0 )); do
+    case "$1" in
+        --include)
+            (( $# >= 2 )) || { echo "Error: --include requires a filename pattern." >&2; exit 1; }
+            patterns+=("$2")
+            shift
+            ;;
+
+        --exclude)
+            (( $# >= 2 )) || { echo "Error: --exclude requires a path pattern." >&2; exit 1; }
+            excluded_patterns+=("$2")
+            shift
+            ;;
+
+        --output)
+            (( $# >= 2 )) || { echo "Error: --output requires a filename." >&2; exit 1; }
+            output="$2"
+            shift
+            ;;
+
+        --version)
+            echo "projectgather ${VERSION}"
+            exit 0
+            ;;
+
+        --help|-h)
+            show_help
+            exit 0
+            ;;
+
+        *)
+            echo "Error: Unknown option: $1" >&2
+            echo "Run 'projectgather --help' for usage." >&2
+            exit 1
+            ;;
+    esac
+
+    shift
+done
+
+timestamp=$(date +"%Y%m%d-%H%M%S")
+project=$(basename "$PWD")
+
+if [[ -z "$output" ]]; then
+    output="${project}-projectgather-${timestamp}.txt"
+fi
+
+excluded_patterns+=("./${output}" "${output}" "*-CodeGather-*.txt" "*-DocGather-*.txt" "*-projectgather-*.txt")
+
+matches_exclusion() {
+    local file="$1"
+    local pattern
+
+    for pattern in "${excluded_patterns[@]}"; do
+        if [[ "$file" == ${~pattern} ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+typeset -a files=()
+local_file=""
+local_name=""
+local_pattern=""
+matched=false
+
+while IFS= read -r -d $'\0' local_file; do
+    local_name="${local_file:t}"
+    matched=false
+
+    for local_pattern in "${patterns[@]}"; do
+        if [[ "$local_name" == ${~local_pattern} ]]; then
+            matched=true
+            break
+        fi
+    done
+
+    if [[ "$matched" == true ]] && ! matches_exclusion "$local_file"; then
+        files+=("$local_file")
+    fi
+done < <(
+    find . \
+        -type d \( \
+            -name ".git" -o \
+            -name ".build" -o \
+            -name "build" -o \
+            -name "Build" -o \
+            -name "DerivedData" -o \
+            -name "Pods" -o \
+            -name "node_modules" -o \
+            -name "vendor" -o \
+            -name ".idea" -o \
+            -name ".vscode" -o \
+            -name ".dart_tool" -o \
+            -name ".pub-cache" \
+        \) -prune -o \
+        -type f -print0
+)
+
+if (( ${#files[@]} == 0 )); then
+    echo "No matching project files were found."
+    exit 0
+fi
+
+files=("${(@on)files}")
+
+git_branch=""
+git_commit=""
+git_dirty=""
+
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git_branch=$(git branch --show-current 2>/dev/null || true)
+    git_commit=$(git rev-parse --short HEAD 2>/dev/null || true)
+
+    if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+        git_dirty="yes"
+    else
+        git_dirty="no"
+    fi
+fi
+
+{
+    echo "======================================================================"
+    echo "GatherKit ProjectGather"
+    echo "======================================================================"
+    echo "Project   : ${project}"
+    echo "Generated : $(date)"
+    echo "Tool      : projectgather ${VERSION}"
+    echo "Files     : ${#files[@]}"
+
+    if [[ -n "$git_commit" ]]; then
+        echo "Git Branch: ${git_branch:-detached}"
+        echo "Git Commit: ${git_commit}"
+        echo "Git Dirty : ${git_dirty}"
+    fi
+
+    echo "======================================================================"
+    echo
+    echo "PROJECT FILE INDEX"
+    echo
+
+    for local_file in "${files[@]}"; do
+        echo "${local_file#./}"
+    done
+
+    echo
+
+    for local_file in "${files[@]}"; do
+        echo "======================================================================"
+        echo "FILE: ${local_file#./}"
+        echo "======================================================================"
+        cat "$local_file"
+        echo
+        echo
+    done
+} > "$output"
+
+echo "Created ${output}"
+echo "Gathered ${#files[@]} project files."
+
