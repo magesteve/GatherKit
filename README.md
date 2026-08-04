@@ -137,7 +137,7 @@ Or install it as a command available from anywhere:
 sudo cp CodeGather /usr/local/bin/CodeGather
 ```
 
-Then, from the root of any supported Swift project:
+Then, from the root of any software project:
 
 ``` bash
 CodeGather
