@@ -356,3 +356,5 @@ See the `LICENSE` file for details.
 **Teaching Your Project to Talk to AI**
 
 The accompanying article explains the motivation behind GatherKit, how the idea emerged while developing AetherCircle, and why project context may become as important as prompt engineering.
+
+https://magesteve.medium.com/beyond-prompt-engineering-designing-projects-for-ai-collaboration-28d50b331574
