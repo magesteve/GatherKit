@@ -1,6 +1,6 @@
 #!/bin/zsh
 #
-# CodeGather
+# codegather
 #
 # Gathers source-code and build-configuration files into one timestamped
 # text document for sharing with AI assistants.
