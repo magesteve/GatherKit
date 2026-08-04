@@ -133,11 +133,7 @@ CodeGather
 
 ## Roadmap
 
--   [x] CodeGather (Swift)
--   [ ] CodeGather (C/C++)
--   [ ] CodeGather (Objective-C)
--   [ ] CodeGather (Python)
--   [ ] CodeGather (Java/Kotlin)
+-   [x] CodeGather
 -   [ ] DocGather
 -   [ ] ProjectGather
 -   [ ] ChangeGather
